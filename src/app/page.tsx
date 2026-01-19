@@ -92,7 +92,7 @@ function convertUnits(quantity: number, fromUnit: string, toUnit: string): numbe
 // ============ MAIN COMPONENT ============
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"invoices" | "pos" | "recipe">("invoices");
+  const [activeTab, setActiveTab] = useState<"invoices" | "pos" | "recipe" | "alerts">("invoices");
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50 py-8 px-4">
@@ -109,10 +109,10 @@ export default function Home() {
 
         {/* Tab Navigation */}
         <div className="flex justify-center mb-8">
-          <div className="inline-flex bg-white rounded-xl p-1.5 shadow-sm border border-gray-200">
+          <div className="inline-flex bg-white rounded-xl p-1.5 shadow-sm border border-gray-200 flex-wrap justify-center gap-1">
             <button
               onClick={() => setActiveTab("invoices")}
-              className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 activeTab === "invoices"
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
@@ -122,7 +122,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => setActiveTab("pos")}
-              className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 activeTab === "pos"
                   ? "bg-purple-600 text-white shadow-sm"
                   : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
@@ -132,13 +132,23 @@ export default function Home() {
             </button>
             <button
               onClick={() => setActiveTab("recipe")}
-              className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 activeTab === "recipe"
                   ? "bg-orange-500 text-white shadow-sm"
                   : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
               }`}
             >
               Recipe Calculator
+            </button>
+            <button
+              onClick={() => setActiveTab("alerts")}
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "alerts"
+                  ? "bg-red-600 text-white shadow-sm"
+                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+              }`}
+            >
+              Alerts & Analysis
             </button>
           </div>
         </div>
@@ -147,6 +157,7 @@ export default function Home() {
         {activeTab === "invoices" && <InvoiceCapture />}
         {activeTab === "pos" && <POSSales />}
         {activeTab === "recipe" && <RecipeCalculator />}
+        {activeTab === "alerts" && <AlertsAnalysis />}
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-gray-500">
@@ -1601,6 +1612,314 @@ function RecipeCalculator() {
       </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ============ ALERTS & ANALYSIS TAB ============
+
+type Alert = {
+  id: string;
+  title: string;
+  ingredient: string;
+  supplier: string;
+  oldPrice: number;
+  newPrice: number;
+  changePercent: number;
+  impactLevel: 'Critical' | 'High' | 'Medium' | 'Low';
+  affectedDishes: string[];
+  totalCostImpact: number;
+  aiRecommendation: string;
+  createdAt: string;
+};
+
+type AlertsSummary = {
+  totalAlerts: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  totalImpact: number;
+};
+
+function AlertsAnalysis() {
+  const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [summary, setSummary] = useState<AlertsSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'Critical' | 'High' | 'Medium' | 'Low'>('all');
+
+  useEffect(() => {
+    fetchAlerts();
+  }, []);
+
+  async function fetchAlerts() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/alerts');
+      const data = await response.json();
+
+      if (data.success) {
+        setAlerts(data.alerts || []);
+        setSummary(data.summary || null);
+        setMessage(data.message || null);
+      } else {
+        setError(data.error || 'Failed to fetch alerts');
+      }
+    } catch (err) {
+      setError('Failed to connect to alerts service');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredAlerts = filter === 'all'
+    ? alerts
+    : alerts.filter(a => a.impactLevel === filter);
+
+  const impactLevelColors = {
+    Critical: 'bg-red-100 text-red-800 border-red-200',
+    High: 'bg-orange-100 text-orange-800 border-orange-200',
+    Medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    Low: 'bg-green-100 text-green-800 border-green-200',
+  };
+
+  const impactBadgeColors = {
+    Critical: 'bg-red-600',
+    High: 'bg-orange-500',
+    Medium: 'bg-yellow-500',
+    Low: 'bg-green-500',
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-4 border-red-600 border-t-transparent mx-auto mb-6" />
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          Analyzing Price Changes...
+        </h2>
+        <p className="text-gray-600">
+          Scanning invoices and generating AI recommendations
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Alerts</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={fetchAlerts}
+            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 text-center">
+            <p className="text-3xl font-bold text-gray-900">{summary.totalAlerts}</p>
+            <p className="text-sm text-gray-600">Total Alerts</p>
+          </div>
+          <div className="bg-red-50 rounded-xl border border-red-200 p-4 text-center">
+            <p className="text-3xl font-bold text-red-700">{summary.criticalCount}</p>
+            <p className="text-sm text-red-600">Critical</p>
+          </div>
+          <div className="bg-orange-50 rounded-xl border border-orange-200 p-4 text-center">
+            <p className="text-3xl font-bold text-orange-700">{summary.highCount}</p>
+            <p className="text-sm text-orange-600">High</p>
+          </div>
+          <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4 text-center">
+            <p className="text-3xl font-bold text-yellow-700">{summary.mediumCount}</p>
+            <p className="text-sm text-yellow-600">Medium</p>
+          </div>
+          <div className="bg-green-50 rounded-xl border border-green-200 p-4 text-center">
+            <p className="text-3xl font-bold text-green-700">{summary.lowCount}</p>
+            <p className="text-sm text-green-600">Low</p>
+          </div>
+        </div>
+      )}
+
+      {/* Estimated Monthly Impact */}
+      {summary && summary.totalImpact !== 0 && (
+        <div className={`rounded-xl p-6 ${summary.totalImpact > 0 ? 'bg-gradient-to-r from-red-500 to-orange-500' : 'bg-gradient-to-r from-green-500 to-emerald-500'} text-white`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm opacity-80">Estimated Monthly Cost Impact</p>
+              <p className="text-3xl font-bold">
+                {summary.totalImpact > 0 ? '+' : '-'}${Math.abs(summary.totalImpact).toFixed(2)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm opacity-80">Based on detected price changes</p>
+              <p className="text-sm">Review recommendations below</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      {alerts.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">Filter by impact:</span>
+              <div className="flex gap-1">
+                {['all', 'Critical', 'High', 'Medium', 'Low'].map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setFilter(level as any)}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition ${
+                      filter === level
+                        ? level === 'all'
+                          ? 'bg-gray-900 text-white'
+                          : `${impactBadgeColors[level as keyof typeof impactBadgeColors]} text-white`
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {level === 'all' ? 'All' : level}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={fetchAlerts}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Message (no alerts) */}
+      {message && alerts.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">All Clear!</h2>
+          <p className="text-gray-600">{message}</p>
+        </div>
+      )}
+
+      {/* Alerts List */}
+      {filteredAlerts.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-gray-800">
+            Price Change Alerts ({filteredAlerts.length})
+          </h2>
+
+          {filteredAlerts.map((alert) => (
+            <div
+              key={alert.id}
+              className={`bg-white rounded-xl shadow-sm border overflow-hidden ${impactLevelColors[alert.impactLevel]}`}
+            >
+              {/* Alert Header */}
+              <div
+                className="p-4 cursor-pointer hover:bg-gray-50 transition"
+                onClick={() => setExpandedAlert(expandedAlert === alert.id ? null : alert.id)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`px-2 py-0.5 rounded text-xs font-semibold text-white ${impactBadgeColors[alert.impactLevel]}`}>
+                        {alert.impactLevel}
+                      </span>
+                      <span className={`text-sm font-medium ${alert.changePercent > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {alert.changePercent > 0 ? '+' : ''}{alert.changePercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-gray-900">{alert.ingredient}</h3>
+                    <p className="text-sm text-gray-600">
+                      ${alert.oldPrice.toFixed(2)} → ${alert.newPrice.toFixed(2)}
+                      {alert.supplier && ` • ${alert.supplier}`}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-lg font-bold ${alert.totalCostImpact > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {alert.totalCostImpact > 0 ? '+' : '-'}${Math.abs(alert.totalCostImpact).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-gray-500">est. monthly</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Expanded Details */}
+              {expandedAlert === alert.id && (
+                <div className="px-4 pb-4 border-t border-gray-100">
+                  {/* AI Recommendation */}
+                  <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-blue-900 mb-1">AI Recommendation</p>
+                        <p className="text-sm text-blue-800">{alert.aiRecommendation}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Affected Dishes */}
+                  {alert.affectedDishes.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Affected Dishes:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {alert.affectedDishes.map((dish, idx) => (
+                          <span
+                            key={idx}
+                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                          >
+                            {dish}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Info Box */}
+      <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">How Price Alerts Work</h3>
+        <ul className="text-sm text-gray-600 space-y-1">
+          <li>• Alerts are generated by comparing prices from your uploaded invoices</li>
+          <li>• AI analyzes each price change and provides actionable recommendations</li>
+          <li>• Impact levels are based on percentage change: Critical (20%+), High (10%+), Medium (5%+), Low (&lt;5%)</li>
+          <li>• Monthly cost impact is estimated based on typical usage patterns</li>
+        </ul>
+      </div>
     </div>
   );
 }
