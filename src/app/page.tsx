@@ -2722,7 +2722,7 @@ function CostCalculator() {
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Data</h3>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={fetchCostData}
+            onClick={() => fetchCostData()}
             className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
           >
             Try Again

@@ -368,7 +368,7 @@ function calculateIngredientPriceChanges(
   }
 
   // Match to ingredients
-  for (const [key, invoiceItem] of latestPrices) {
+  for (const [key, invoiceItem] of Array.from(latestPrices.entries())) {
     // Try to find matching ingredient
     const ingredient = ingredients.get(key)
     if (ingredient && ingredient.unitCost > 0) {
