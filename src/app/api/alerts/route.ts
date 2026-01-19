@@ -5,7 +5,7 @@ const notion = new Client({
   auth: process.env.NOTION_API_KEY,
 })
 
-const INVOICE_ITEMS_DB = process.env.NOTION_INVOICE_ITEMS_DB || '2ece4eb3-a205-8123-9734-ed7e5a7546dc'
+const INVOICE_ITEMS_DB = process.env.NOTION_INVOICE_ITEMS_DB || '2ece4eb3-a205-81ea-a7ae-e22b95158dab'
 const RECIPES_DB = process.env.NOTION_RECIPES_DB || '2ece4eb3-a205-810e-820e-ecb16b053bbe'
 const RECIPE_INGREDIENTS_DB = process.env.NOTION_RECIPE_INGREDIENTS_DB || '2ece4eb3-a205-81c0-a268-ea9f417aa728'
 
@@ -65,7 +65,9 @@ async function fetchInvoiceItems(): Promise<InvoiceItem[]> {
     for (const page of response.results) {
       const props = (page as any).properties
 
-      const productName = props['Product Name']?.title?.[0]?.plain_text || ''
+      // Try different title property names (Notion uses 'Name' by default for title property)
+      const productName = props['Product Name']?.title?.[0]?.plain_text ||
+                          props['Name']?.title?.[0]?.plain_text || ''
       const supplier = props['Supplier']?.rich_text?.[0]?.plain_text ||
                        props['Supplier']?.select?.name || ''
       const unitPrice = props['Unit Price']?.number || 0
