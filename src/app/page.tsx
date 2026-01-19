@@ -108,48 +108,50 @@ export default function Home() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex justify-center mb-8">
-          <div className="inline-flex bg-white rounded-xl p-1.5 shadow-sm border border-gray-200 flex-wrap justify-center gap-1">
-            <button
-              onClick={() => setActiveTab("invoices")}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === "invoices"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              Invoice Capture
-            </button>
-            <button
-              onClick={() => setActiveTab("pos")}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === "pos"
-                  ? "bg-purple-600 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              POS Sales
-            </button>
-            <button
-              onClick={() => setActiveTab("recipe")}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === "recipe"
-                  ? "bg-orange-500 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              Recipe Calculator
-            </button>
-            <button
-              onClick={() => setActiveTab("alerts")}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === "alerts"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              Alerts & Analysis
-            </button>
+        <div className="mb-8 overflow-x-auto pb-2">
+          <div className="flex justify-center min-w-max">
+            <div className="inline-flex bg-white rounded-xl p-1.5 shadow-sm border border-gray-200">
+              <button
+                onClick={() => setActiveTab("invoices")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "invoices"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Invoices
+              </button>
+              <button
+                onClick={() => setActiveTab("pos")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "pos"
+                    ? "bg-purple-600 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                POS Sales
+              </button>
+              <button
+                onClick={() => setActiveTab("recipe")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "recipe"
+                    ? "bg-orange-500 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Recipes
+              </button>
+              <button
+                onClick={() => setActiveTab("alerts")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "alerts"
+                    ? "bg-red-600 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Alerts
+              </button>
+            </div>
           </div>
         </div>
 
