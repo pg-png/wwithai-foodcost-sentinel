@@ -63,8 +63,8 @@ type RecipeLine = {
 
 // ============ CONSTANTS ============
 
-const WEBHOOK_EXTRACT = "https://hanumet.app.n8n.cloud/webhook/demo-invoice-extract";
-const WEBHOOK_CONFIRM = "https://hanumet.app.n8n.cloud/webhook/demo-invoice-confirm";
+const WEBHOOK_EXTRACT = "https://hanumet.app.n8n.cloud/webhook/invoice-extract-v2";
+const WEBHOOK_CONFIRM = "https://hanumet.app.n8n.cloud/webhook/invoice-confirm-v2";
 const WEBHOOK_POS_UPLOAD = "https://hanumet.app.n8n.cloud/webhook/demo-pos-upload";
 const NOTION_INVOICES_URL = "https://www.notion.so/2ece4eb3a20581239734ed7e5a7546dc";
 const NOTION_POS_URL = "https://www.notion.so/2ece4eb3a205817f8b2fe08ef333d2df";
