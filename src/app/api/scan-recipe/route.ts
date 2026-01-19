@@ -146,6 +146,7 @@ export async function POST(request: Request) {
 
     let extractedIngredients: ExtractedIngredient[] = []
     let recipeName = 'Scanned Recipe'
+    let apiError: string | null = null
 
     if (anthropicKey) {
       // Use Claude Vision API
@@ -153,30 +154,31 @@ export async function POST(request: Request) {
       const base64 = Buffer.from(arrayBuffer).toString('base64')
       const mediaType = file.type || 'image/jpeg'
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1024,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: mediaType,
-                  data: base64,
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: mediaType,
+                    data: base64,
+                  },
                 },
-              },
-              {
-                type: 'text',
-                text: `Extract the recipe information from this image. This could be a handwritten note, printed recipe, or ingredient list. Return JSON only with this exact format:
+                {
+                  type: 'text',
+                  text: `Extract the recipe information from this image. This could be a handwritten note, printed recipe, or ingredient list. Return JSON only with this exact format:
 {
   "name": "Recipe Name",
   "ingredients": [
@@ -188,34 +190,49 @@ export async function POST(request: Request) {
 Use these units: g, kg, mL, L, fl. oz, whole unit
 For items counted individually (eggs, pieces), use "whole unit".
 Return ONLY the JSON, no other text.`
-              }
-            ]
-          }]
+                }
+              ]
+            }]
+          })
         })
-      })
 
-      if (response.ok) {
-        const data = await response.json()
-        const content = data.content?.[0]?.text || ''
+        if (response.ok) {
+          const data = await response.json()
+          const content = data.content?.[0]?.text || ''
 
-        const jsonMatch = content.match(/\{[\s\S]*\}/)
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[0])
-            recipeName = parsed.name || 'Scanned Recipe'
-            extractedIngredients = parsed.ingredients || []
-          } catch (e) {
-            console.error('Failed to parse JSON from Claude:', e)
+          const jsonMatch = content.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[0])
+              recipeName = parsed.name || 'Scanned Recipe'
+              extractedIngredients = parsed.ingredients || []
+            } catch (e) {
+              console.error('Failed to parse JSON from Claude:', e)
+              apiError = 'Failed to parse Claude response'
+            }
+          } else {
+            apiError = 'No valid JSON in Claude response'
           }
+        } else {
+          const errorData = await response.json().catch(() => ({}))
+          apiError = `Claude API error: ${response.status} - ${errorData.error?.message || response.statusText}`
+          console.error('Claude API error:', response.status, errorData)
         }
+      } catch (fetchError: any) {
+        apiError = `Network error calling Claude: ${fetchError.message}`
+        console.error('Fetch error:', fetchError)
       }
     }
 
     // If no API key or extraction failed, provide demo data
     if (extractedIngredients.length === 0) {
+      const reason = !anthropicKey
+        ? 'No ANTHROPIC_API_KEY configured'
+        : apiError || 'No ingredients extracted from image'
+
       return NextResponse.json({
         success: true,
-        note: 'Demo mode - Add ANTHROPIC_API_KEY for real image scanning',
+        note: `Demo mode - ${reason}`,
         recipe: {
           name: 'Sample Pad Thai (Demo)',
           description: 'Demo recipe - Add API key for real scanning',
