@@ -59,7 +59,7 @@ async function fetchInvoiceItems(): Promise<InvoiceItem[]> {
       database_id: INVOICE_ITEMS_DB,
       page_size: 100,
       start_cursor: startCursor,
-      sorts: [{ property: 'Created', direction: 'descending' }],
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
     })
 
     for (const page of response.results) {
@@ -121,7 +121,7 @@ function detectPriceChanges(items: InvoiceItem[]): PriceChange[] {
   const changes: PriceChange[] = []
 
   // Find price changes for each product
-  for (const [_, productItems] of productHistory) {
+  for (const productItems of Array.from(productHistory.values())) {
     if (productItems.length < 2) continue
 
     // Sort by date descending

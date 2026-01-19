@@ -52,6 +52,19 @@ type Ingredient = {
   category: string;
 };
 
+type RecentInvoice = {
+  id: string;
+  invoiceNumber: string;
+  supplier: string;
+  location: string;
+  totalAmount: number;
+  currency: string;
+  itemsCount: number;
+  status: string;
+  createdAt: string;
+  notionUrl: string;
+};
+
 type RecipeLine = {
   ingredientId: string;
   ingredientName: string;
@@ -92,7 +105,7 @@ function convertUnits(quantity: number, fromUnit: string, toUnit: string): numbe
 // ============ MAIN COMPONENT ============
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"invoices" | "pos" | "recipe" | "alerts">("invoices");
+  const [activeTab, setActiveTab] = useState<"invoices" | "pos" | "recipe" | "costs" | "matching" | "alerts">("invoices");
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50 py-8 px-4">
@@ -142,6 +155,26 @@ export default function Home() {
                 Recipes
               </button>
               <button
+                onClick={() => setActiveTab("costs")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "costs"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Cost Calculator
+              </button>
+              <button
+                onClick={() => setActiveTab("matching")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "matching"
+                    ? "bg-amber-500 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Matching
+              </button>
+              <button
                 onClick={() => setActiveTab("alerts")}
                 className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
                   activeTab === "alerts"
@@ -159,6 +192,8 @@ export default function Home() {
         {activeTab === "invoices" && <InvoiceCapture />}
         {activeTab === "pos" && <POSSales />}
         {activeTab === "recipe" && <RecipeCalculator />}
+        {activeTab === "costs" && <CostCalculator />}
+        {activeTab === "matching" && <IngredientMatching />}
         {activeTab === "alerts" && <AlertsAnalysis />}
 
         {/* Footer */}
@@ -379,6 +414,13 @@ function InvoiceCapture() {
         </div>
       )}
 
+      {/* Show Activity Feed on Upload Step */}
+      {step === "upload" && (
+        <div className="mt-6">
+          <RecentActivityFeed highlightId={null} />
+        </div>
+      )}
+
       {/* Processing Step */}
       {step === "processing" && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
@@ -489,46 +531,73 @@ function InvoiceCapture() {
       )}
 
       {/* Success Step */}
-      {step === "success" && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+      {step === "success" && extractedData && (
+        <div className="space-y-6">
+          {/* Success Card */}
+          <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg p-6 text-white">
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold mb-1">Invoice Captured!</h2>
+                <p className="text-green-100 text-sm mb-3">
+                  Successfully saved to your Notion database
+                </p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="bg-white/10 rounded-lg px-3 py-2">
+                    <p className="text-green-200 text-xs">Invoice #</p>
+                    <p className="font-semibold">{extractedData.invoice_number}</p>
+                  </div>
+                  <div className="bg-white/10 rounded-lg px-3 py-2">
+                    <p className="text-green-200 text-xs">Supplier</p>
+                    <p className="font-semibold">{extractedData.supplier}</p>
+                  </div>
+                  <div className="bg-white/10 rounded-lg px-3 py-2">
+                    <p className="text-green-200 text-xs">Total Amount</p>
+                    <p className="font-semibold">{extractedData.currency} ${extractedData.total_amount.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white/10 rounded-lg px-3 py-2">
+                    <p className="text-green-200 text-xs">Line Items</p>
+                    <p className="font-semibold">{extractedData.items_count} products</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Invoice Saved!
-          </h2>
-          <p className="text-gray-600 mb-6">
-            Your invoice has been captured and stored successfully.
-          </p>
 
-          <div className="flex flex-col gap-3">
-            {savedInvoiceId && (
-              <a
-                href={`https://www.notion.so/${savedInvoiceId.replace(/-/g, "")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block px-6 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
+          {/* Action Buttons */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              {savedInvoiceId && (
+                <a
+                  href={`https://www.notion.so/${savedInvoiceId.replace(/-/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  View in Notion
+                </a>
+              )}
+              <button
+                onClick={reset}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
               >
-                View Invoice in Notion
-              </a>
-            )}
-            <a
-              href={NOTION_INVOICES_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-            >
-              View All Invoices
-            </a>
-            <button
-              onClick={reset}
-              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-            >
-              Capture Another Invoice
-            </button>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Capture Another
+              </button>
+            </div>
           </div>
+
+          {/* Recent Activity Feed */}
+          <RecentActivityFeed highlightId={savedInvoiceId} />
         </div>
       )}
     </>
@@ -1926,6 +1995,198 @@ function AlertsAnalysis() {
   );
 }
 
+// ============ RECENT ACTIVITY FEED ============
+
+function RecentActivityFeed({ highlightId }: { highlightId: string | null }) {
+  const [invoices, setInvoices] = useState<RecentInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchRecentInvoices();
+  }, []);
+
+  async function fetchRecentInvoices() {
+    try {
+      const response = await fetch('/api/recent-invoices');
+      const data = await response.json();
+
+      if (data.success) {
+        setInvoices(data.invoices || []);
+      } else {
+        setError(data.error || 'Failed to load activity');
+      }
+    } catch {
+      setError('Failed to connect');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function formatTimeAgo(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  const statusColors: Record<string, string> = {
+    Confirmed: 'bg-green-100 text-green-700',
+    Pending: 'bg-yellow-100 text-yellow-700',
+    'Pending Review': 'bg-yellow-100 text-yellow-700',
+    Rejected: 'bg-red-100 text-red-700',
+    Error: 'bg-red-100 text-red-700',
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-5 h-5 bg-gray-200 rounded animate-pulse" />
+          <div className="w-32 h-5 bg-gray-200 rounded animate-pulse" />
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg animate-pulse">
+              <div className="w-10 h-10 bg-gray-200 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <div className="w-24 h-4 bg-gray-200 rounded" />
+                <div className="w-32 h-3 bg-gray-200 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p className="text-gray-500 text-sm text-center">{error}</p>
+      </div>
+    );
+  }
+
+  if (invoices.length === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
+        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+          <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <p className="text-gray-600 font-medium">No invoices yet</p>
+        <p className="text-gray-500 text-sm">Capture your first invoice to see it here</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h3 className="font-semibold text-gray-800">Recent Activity</h3>
+        </div>
+        <a
+          href={NOTION_INVOICES_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+        >
+          View all
+        </a>
+      </div>
+
+      {/* Activity List */}
+      <div className="divide-y divide-gray-50">
+        {invoices.slice(0, 5).map((invoice) => {
+          const isHighlighted = highlightId === invoice.id;
+
+          return (
+            <a
+              key={invoice.id}
+              href={invoice.notionUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors ${
+                isHighlighted ? 'bg-green-50 border-l-4 border-green-500' : ''
+              }`}
+            >
+              {/* Icon */}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                isHighlighted ? 'bg-green-500' : 'bg-blue-100'
+              }`}>
+                <svg className={`w-5 h-5 ${isHighlighted ? 'text-white' : 'text-blue-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-gray-900 truncate">
+                    {invoice.invoiceNumber || 'Invoice'}
+                  </p>
+                  {isHighlighted && (
+                    <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">
+                      New
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 truncate">
+                  {invoice.supplier || 'Unknown supplier'} • {invoice.itemsCount} items
+                </p>
+              </div>
+
+              {/* Right side */}
+              <div className="text-right flex-shrink-0">
+                <p className="font-semibold text-gray-900">
+                  ${invoice.totalAmount.toFixed(2)}
+                </p>
+                <div className="flex items-center gap-2 justify-end">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-600'}`}>
+                    {invoice.status}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {formatTimeAgo(invoice.createdAt)}
+                  </span>
+                </div>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      {invoices.length > 5 && (
+        <div className="px-4 py-3 bg-gray-50 text-center">
+          <a
+            href={NOTION_INVOICES_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-gray-600 hover:text-gray-800"
+          >
+            + {invoices.length - 5} more invoices
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ SHARED COMPONENTS ============
 
 function StepIndicator({ number, label, active, completed, color }: { number: number; label: string; active: boolean; completed: boolean; color: string }) {
@@ -1968,6 +2229,893 @@ function InfoField({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-xs text-gray-500 uppercase tracking-wide">{label}</dt>
       <dd className="text-gray-900 font-medium">{value || "—"}</dd>
+    </div>
+  );
+}
+
+// ============ INGREDIENT MATCHING TAB ============
+
+type MatchedIngredient = {
+  id: string;
+  name: string;
+  unitCost: number;
+  perUnit: string;
+  latestPrice: number | null;
+  priceUpdated: string | null;
+};
+
+type InvoiceItemMatch = {
+  id: string;
+  productName: string;
+  unitPrice: number;
+  unit: string;
+  invoiceDate: string;
+};
+
+type MatchResult = {
+  invoiceItem: InvoiceItemMatch;
+  matchedIngredient: MatchedIngredient | null;
+  confidence: "high" | "medium" | "low" | "none";
+  needsClarification: boolean;
+  possibleMatches: MatchedIngredient[];
+  aiSuggestion?: string;
+};
+
+type PriceChange = {
+  ingredientId: string;
+  ingredientName: string;
+  referencePrice: number;
+  latestPrice: number;
+  variance: number;
+  variancePct: number;
+  invoiceDate: string;
+  unit: string;
+};
+
+type MatchingResponse = {
+  success: boolean;
+  summary: {
+    totalInvoiceItems: number;
+    autoMatched: number;
+    needsClarification: number;
+    noMatch: number;
+    priceChangesDetected: number;
+  };
+  priceChanges: PriceChange[];
+  needsClarification: MatchResult[];
+  ingredients: number;
+};
+
+function IngredientMatching() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<MatchingResponse | null>(null);
+  const [activeSection, setActiveSection] = useState<"clarifications" | "prices">("clarifications");
+  const [confirmingMatch, setConfirmingMatch] = useState<string | null>(null);
+
+  const fetchMatchingData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/match-ingredients");
+      if (!response.ok) throw new Error("Failed to fetch matching data");
+      const result = await response.json();
+      if (result.success) {
+        setData(result);
+      } else {
+        throw new Error(result.error || "Unknown error");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMatchingData();
+  }, []);
+
+  const confirmMatch = async (ingredientId: string, newPrice: number, invoiceDate: string, itemId: string) => {
+    setConfirmingMatch(itemId);
+    try {
+      const response = await fetch("/api/match-ingredients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ingredientId, newPrice, invoiceDate, invoiceItemId: itemId }),
+      });
+      if (response.ok) {
+        // Refresh data after confirming
+        await fetchMatchingData();
+      }
+    } catch (err) {
+      console.error("Failed to confirm match:", err);
+    } finally {
+      setConfirmingMatch(null);
+    }
+  };
+
+  const getConfidenceBadge = (confidence: string) => {
+    const styles: Record<string, string> = {
+      high: "bg-green-100 text-green-800",
+      medium: "bg-yellow-100 text-yellow-800",
+      low: "bg-orange-100 text-orange-800",
+      none: "bg-gray-100 text-gray-800",
+    };
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[confidence] || styles.none}`}>
+        {confidence}
+      </span>
+    );
+  };
+
+  if (loading && !data) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12">
+        <div className="flex flex-col items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mb-4" />
+          <p className="text-gray-600">Analyzing invoice items and matching ingredients...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <div className="text-center">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Data</h3>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={fetchMatchingData}
+            className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Summary */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">Ingredient Matching</h2>
+            <p className="text-sm text-gray-500 mt-1">Match invoice items to your ingredient database</p>
+          </div>
+          <button
+            onClick={fetchMatchingData}
+            disabled={loading}
+            className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {loading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
+            Refresh
+          </button>
+        </div>
+
+        {data && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-gray-900">{data.summary.totalInvoiceItems}</div>
+              <div className="text-xs text-gray-500">Invoice Items</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{data.summary.autoMatched}</div>
+              <div className="text-xs text-gray-500">Auto-Matched</div>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-amber-600">{data.summary.needsClarification}</div>
+              <div className="text-xs text-gray-500">Need Review</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-gray-400">{data.summary.noMatch}</div>
+              <div className="text-xs text-gray-500">No Match</div>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-blue-600">{data.summary.priceChangesDetected}</div>
+              <div className="text-xs text-gray-500">Price Changes</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Section Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setActiveSection("clarifications")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeSection === "clarifications"
+              ? "bg-amber-500 text-white"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+        >
+          Clarifications Needed ({data?.needsClarification.length || 0})
+        </button>
+        <button
+          onClick={() => setActiveSection("prices")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeSection === "prices"
+              ? "bg-blue-500 text-white"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+        >
+          Price Variations ({data?.priceChanges.length || 0})
+        </button>
+      </div>
+
+      {/* Clarifications Section */}
+      {activeSection === "clarifications" && data && (
+        <div className="space-y-4">
+          {data.needsClarification.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <div className="text-green-500 text-5xl mb-4">✓</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">All Clear!</h3>
+              <p className="text-gray-600">No items need clarification at this time.</p>
+            </div>
+          ) : (
+            data.needsClarification.map((match) => (
+              <div key={match.invoiceItem.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{match.invoiceItem.productName}</h3>
+                    <p className="text-sm text-gray-500">
+                      ${match.invoiceItem.unitPrice.toFixed(2)} / {match.invoiceItem.unit || "unit"} • {match.invoiceItem.invoiceDate}
+                    </p>
+                  </div>
+                  {getConfidenceBadge(match.confidence)}
+                </div>
+
+                {match.aiSuggestion && (
+                  <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-purple-600">🤖</span>
+                      <span className="text-xs font-medium text-purple-700">AI Suggestion</span>
+                    </div>
+                    <p className="text-sm text-purple-800">{match.aiSuggestion}</p>
+                  </div>
+                )}
+
+                {match.possibleMatches.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Possible Matches</p>
+                    {match.possibleMatches.map((ingredient) => (
+                      <div
+                        key={ingredient.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                      >
+                        <div>
+                          <span className="font-medium text-gray-900">{ingredient.name}</span>
+                          <span className="text-sm text-gray-500 ml-2">
+                            ${ingredient.unitCost.toFixed(2)} / {ingredient.perUnit}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() =>
+                            confirmMatch(
+                              ingredient.id,
+                              match.invoiceItem.unitPrice,
+                              match.invoiceItem.invoiceDate,
+                              match.invoiceItem.id
+                            )
+                          }
+                          disabled={confirmingMatch === match.invoiceItem.id}
+                          className="px-3 py-1.5 bg-amber-500 text-white text-sm rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
+                        >
+                          {confirmingMatch === match.invoiceItem.id ? "Confirming..." : "Confirm Match"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {match.possibleMatches.length === 0 && (
+                  <div className="p-4 bg-gray-50 rounded-lg text-center">
+                    <p className="text-gray-500 text-sm">No matching ingredients found</p>
+                    <button className="mt-2 text-amber-600 text-sm font-medium hover:text-amber-700">
+                      + Create New Ingredient
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Price Variations Section */}
+      {activeSection === "prices" && data && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {data.priceChanges.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="text-blue-500 text-5xl mb-4">📊</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Price Changes</h3>
+              <p className="text-gray-600">Prices are stable compared to reference costs.</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Ingredient</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Reference</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Latest</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Variance</th>
+                  <th className="text-center px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {data.priceChanges.map((change, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <span className="font-medium text-gray-900">{change.ingredientName}</span>
+                      <span className="text-gray-400 text-sm ml-2">/ {change.unit}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right text-gray-600">${change.referencePrice.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right font-medium text-gray-900">${change.latestPrice.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <span
+                        className={`font-medium ${
+                          change.variancePct > 0 ? "text-red-600" : "text-green-600"
+                        }`}
+                      >
+                        {change.variancePct > 0 ? "+" : ""}
+                        {change.variancePct.toFixed(1)}%
+                      </span>
+                      <span className="text-gray-400 text-sm ml-1">
+                        ({change.variance > 0 ? "+" : ""}${change.variance.toFixed(2)})
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm text-gray-500">{change.invoiceDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ COST CALCULATOR TAB ============
+
+type RecipeImpactIngredient = {
+  name: string;
+  quantity: number;
+  unit: string;
+  referenceUnitCost: number;
+  actualUnitCost: number;
+  referenceCost: number;
+  actualCost: number;
+  variance: number;
+  variancePct: number;
+};
+
+type RecipeImpactData = {
+  recipe: {
+    id: string;
+    name: string;
+    category: string;
+    yieldQty: number;
+    yieldUnit: string;
+    sellingPrice: number;
+  };
+  ingredients: RecipeImpactIngredient[];
+  referenceTotalCost: number;
+  actualTotalCost: number;
+  costVariancePerPortion: number;
+  costVariancePct: number;
+  unitsSoldInPeriod: number;
+  totalFinancialImpact: number;
+  sellingPrice: number;
+  referenceMarginPct: number;
+  actualMarginPct: number;
+  marginImpactPct: number;
+  recommendation: string;
+};
+
+type IngredientPriceChange = {
+  ingredientId: string;
+  ingredientName: string;
+  referencePrice: number;
+  actualPrice: number;
+  priceVariance: number;
+  variancePct: number;
+  perUnit: string;
+  invoiceDate: string | null;
+};
+
+type CostCalculatorResponse = {
+  success: boolean;
+  period: {
+    type: string;
+    startDate: string;
+    endDate: string;
+  };
+  summary: {
+    totalRecipes: number;
+    recipesWithIncrease: number;
+    recipesWithDecrease: number;
+    criticalRecipes: number;
+    totalUnitsSold: number;
+    totalReferenceCostandise: number;
+    totalActualCost: number;
+    totalFinancialImpact: number;
+    avgVariancePct: number;
+    invoiceItemsAnalyzed: number;
+    ingredientsWithPriceChange: number;
+  };
+  topImpactedRecipes: RecipeImpactData[];
+  recipesWithVariance: RecipeImpactData[];
+  ingredientPriceChanges: IngredientPriceChange[];
+  aiSummary: string;
+};
+
+function CostCalculator() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<CostCalculatorResponse | null>(null);
+  const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"impact" | "recipes" | "ingredients">("impact");
+  const [period, setPeriod] = useState<string>("week");
+
+  const fetchCostData = async (selectedPeriod: string = period) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/cost-calculator?period=${selectedPeriod}`);
+      if (!response.ok) throw new Error("Failed to fetch cost data");
+      const result = await response.json();
+      if (result.success) {
+        setData(result);
+      } else {
+        throw new Error(result.error || "Unknown error");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCostData();
+  }, []);
+
+  const handlePeriodChange = (newPeriod: string) => {
+    setPeriod(newPeriod);
+    fetchCostData(newPeriod);
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: 'CAD',
+      minimumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const formatPercent = (value: number, showSign = true) => {
+    const sign = showSign && value > 0 ? '+' : '';
+    return `${sign}${value.toFixed(1)}%`;
+  };
+
+  if (loading && !data) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12">
+        <div className="flex flex-col items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mb-4" />
+          <p className="text-gray-600">Calculating recipe costs and variances...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <div className="text-center">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Data</h3>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={fetchCostData}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Period Selector */}
+      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl shadow-lg p-6 text-white">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold">Food Cost Sentinel</h2>
+            <p className="text-emerald-100 mt-1">
+              {data?.period ? `${data.period.startDate} to ${data.period.endDate}` : 'Analyzing cost variances and financial impact'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Period Selector */}
+            <select
+              value={period}
+              onChange={(e) => handlePeriodChange(e.target.value)}
+              className="px-3 py-2 bg-white/20 text-white rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
+            >
+              <option value="week" className="text-gray-900">Last 7 Days</option>
+              <option value="month" className="text-gray-900">Last 30 Days</option>
+              <option value="ytd" className="text-gray-900">Year to Date</option>
+            </select>
+            <button
+              onClick={() => fetchCostData()}
+              disabled={loading}
+              className="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* AI Summary Banner */}
+        {data?.aiSummary && (
+          <div className="bg-white/10 rounded-lg p-4 mb-4">
+            <p className="text-lg">{data.aiSummary}</p>
+          </div>
+        )}
+
+        {data && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-white/10 rounded-lg p-4">
+              <div className="text-3xl font-bold">{data.summary.totalRecipes}</div>
+              <div className="text-sm text-emerald-100">Recipes</div>
+            </div>
+            <div className="bg-white/10 rounded-lg p-4">
+              <div className="text-3xl font-bold">{data.summary.totalUnitsSold.toLocaleString()}</div>
+              <div className="text-sm text-emerald-100">Units Sold</div>
+            </div>
+            <div className="bg-white/10 rounded-lg p-4">
+              <div className="text-3xl font-bold">{data.summary.invoiceItemsAnalyzed}</div>
+              <div className="text-sm text-emerald-100">Invoice Items</div>
+            </div>
+            <div className={`rounded-lg p-4 ${data.summary.totalFinancialImpact > 0 ? 'bg-red-500/30' : 'bg-green-500/30'}`}>
+              <div className="text-3xl font-bold">
+                {data.summary.totalFinancialImpact > 0 ? '+' : ''}{formatCurrency(data.summary.totalFinancialImpact)}
+              </div>
+              <div className="text-sm text-emerald-100">Financial Impact</div>
+            </div>
+            <div className={`rounded-lg p-4 ${data.summary.criticalRecipes > 0 ? 'bg-red-500/30' : 'bg-white/10'}`}>
+              <div className="text-3xl font-bold">{data.summary.criticalRecipes}</div>
+              <div className="text-sm text-emerald-100">Critical Items</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Impact Summary Cards */}
+      {data && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">📈</span>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-red-600">{data.summary.recipesWithIncrease}</div>
+                <div className="text-sm text-gray-500">Cost Increases</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">📉</span>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-green-600">{data.summary.recipesWithDecrease}</div>
+                <div className="text-sm text-gray-500">Cost Decreases</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">🥕</span>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-amber-600">{data.summary.ingredientsWithPriceChange}</div>
+                <div className="text-sm text-gray-500">Price Changes</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">📊</span>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-blue-600">{formatPercent(data.summary.avgVariancePct)}</div>
+                <div className="text-sm text-gray-500">Avg Variance</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Mode Tabs */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setViewMode("impact")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            viewMode === "impact"
+              ? "bg-emerald-600 text-white"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+        >
+          Top Impact ({data?.topImpactedRecipes.filter(r => r.unitsSoldInPeriod > 0).length || 0})
+        </button>
+        <button
+          onClick={() => setViewMode("recipes")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            viewMode === "recipes"
+              ? "bg-emerald-600 text-white"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+        >
+          All Recipes ({data?.topImpactedRecipes.length || 0})
+        </button>
+        <button
+          onClick={() => setViewMode("ingredients")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            viewMode === "ingredients"
+              ? "bg-emerald-600 text-white"
+              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          }`}
+        >
+          Ingredient Prices ({data?.ingredientPriceChanges.length || 0})
+        </button>
+      </div>
+
+      {/* Top Impact View - Financial Impact Focus */}
+      {viewMode === "impact" && data && (
+        <div className="space-y-4">
+          {data.topImpactedRecipes.filter(r => r.unitsSoldInPeriod > 0 || Math.abs(r.costVariancePct) > 2).length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <div className="text-emerald-500 text-5xl mb-4">✓</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Significant Impact</h3>
+              <p className="text-gray-600">All recipes are within normal cost variance range for this period.</p>
+            </div>
+          ) : (
+            data.topImpactedRecipes.filter(r => r.unitsSoldInPeriod > 0 || Math.abs(r.costVariancePct) > 2).slice(0, 15).map((item) => (
+              <div key={item.recipe.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div
+                  className="p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => setExpandedRecipe(expandedRecipe === item.recipe.id ? null : item.recipe.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-3 h-16 rounded-full ${
+                        item.totalFinancialImpact > 50 ? 'bg-red-500' :
+                        item.totalFinancialImpact > 0 ? 'bg-orange-400' :
+                        item.totalFinancialImpact < -50 ? 'bg-green-500' :
+                        'bg-gray-300'
+                      }`} />
+                      <div>
+                        <h3 className="font-semibold text-gray-900 text-lg">{item.recipe.name}</h3>
+                        <p className="text-sm text-gray-500">
+                          {item.recipe.category || 'Uncategorized'} • {item.unitsSoldInPeriod.toLocaleString()} sold this period
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500 uppercase">Per Unit</div>
+                        <div className={`text-lg font-bold ${item.costVariancePerPortion > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {item.costVariancePerPortion > 0 ? '+' : ''}{formatCurrency(item.costVariancePerPortion)}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500 uppercase">Variance</div>
+                        <div className={`text-lg font-bold ${item.costVariancePct > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {formatPercent(item.costVariancePct)}
+                        </div>
+                      </div>
+                      <div className="text-right min-w-[120px]">
+                        <div className="text-xs text-gray-500 uppercase">Total Impact</div>
+                        <div className={`text-2xl font-bold ${item.totalFinancialImpact > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {item.totalFinancialImpact > 0 ? '+' : ''}{formatCurrency(item.totalFinancialImpact)}
+                        </div>
+                      </div>
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${expandedRecipe === item.recipe.id ? 'rotate-180' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Recommendation Banner */}
+                  <div className={`mt-3 p-3 rounded-lg text-sm ${
+                    item.recommendation.includes('CRITICAL') ? 'bg-red-50 text-red-800 border border-red-200' :
+                    item.recommendation.includes('HIGH') ? 'bg-orange-50 text-orange-800 border border-orange-200' :
+                    item.recommendation.includes('OPPORTUNITY') ? 'bg-green-50 text-green-800 border border-green-200' :
+                    'bg-gray-50 text-gray-700 border border-gray-200'
+                  }`}>
+                    {item.recommendation}
+                  </div>
+                </div>
+
+                {/* Expanded Details */}
+                {expandedRecipe === item.recipe.id && (
+                  <div className="border-t border-gray-200 bg-gray-50 p-4">
+                    <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
+                      <div className="bg-white rounded-lg p-3">
+                        <div className="text-gray-500">Reference Cost</div>
+                        <div className="font-bold text-lg">{formatCurrency(item.referenceTotalCost)}</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-3">
+                        <div className="text-gray-500">Actual Cost</div>
+                        <div className="font-bold text-lg">{formatCurrency(item.actualTotalCost)}</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-3">
+                        <div className="text-gray-500">Selling Price</div>
+                        <div className="font-bold text-lg">{item.sellingPrice > 0 ? formatCurrency(item.sellingPrice) : '—'}</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-3">
+                        <div className="text-gray-500">Margin Impact</div>
+                        <div className={`font-bold text-lg ${item.marginImpactPct < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {formatPercent(item.marginImpactPct)}
+                        </div>
+                      </div>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-gray-500 text-xs uppercase">
+                          <th className="text-left py-2">Ingredient</th>
+                          <th className="text-right py-2">Qty</th>
+                          <th className="text-right py-2">Ref $/unit</th>
+                          <th className="text-right py-2">Actual $/unit</th>
+                          <th className="text-right py-2">Line Cost</th>
+                          <th className="text-right py-2">Variance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {item.ingredients.map((ing, idx) => (
+                          <tr key={idx} className="border-t border-gray-200">
+                            <td className="py-2 font-medium text-gray-900">{ing.name}</td>
+                            <td className="py-2 text-right text-gray-600">{ing.quantity} {ing.unit}</td>
+                            <td className="py-2 text-right text-gray-600">{formatCurrency(ing.referenceUnitCost)}</td>
+                            <td className="py-2 text-right text-gray-900">{formatCurrency(ing.actualUnitCost)}</td>
+                            <td className="py-2 text-right text-gray-900">{formatCurrency(ing.actualCost)}</td>
+                            <td className={`py-2 text-right font-medium ${
+                              ing.variancePct > 0 ? 'text-red-600' : ing.variancePct < 0 ? 'text-green-600' : 'text-gray-400'
+                            }`}>
+                              {Math.abs(ing.variancePct) >= 1 ? formatPercent(ing.variancePct) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* All Recipes View */}
+      {viewMode === "recipes" && data && (
+        <div className="space-y-3">
+          {data.topImpactedRecipes.map((item) => (
+            <div key={item.recipe.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex items-center justify-between hover:bg-gray-50">
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-10 rounded-full ${
+                  item.costVariancePct > 5 ? 'bg-red-500' :
+                  item.costVariancePct > 0 ? 'bg-orange-400' :
+                  item.costVariancePct < -5 ? 'bg-green-500' :
+                  'bg-gray-300'
+                }`} />
+                <div>
+                  <div className="font-medium text-gray-900">{item.recipe.name}</div>
+                  <div className="text-xs text-gray-500">{item.recipe.category || 'Uncategorized'}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 text-sm">
+                <div className="text-right">
+                  <div className="text-gray-500">Reference</div>
+                  <div className="font-medium">{formatCurrency(item.referenceTotalCost)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-gray-500">Actual</div>
+                  <div className="font-medium">{formatCurrency(item.actualTotalCost)}</div>
+                </div>
+                <div className="text-right min-w-[70px]">
+                  <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                    item.costVariancePct > 5 ? 'bg-red-100 text-red-800' :
+                    item.costVariancePct > 0 ? 'bg-orange-100 text-orange-800' :
+                    item.costVariancePct < -5 ? 'bg-green-100 text-green-800' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {formatPercent(item.costVariancePct)}
+                  </span>
+                </div>
+                <div className="text-right min-w-[60px]">
+                  <div className="text-gray-400 text-xs">Sold</div>
+                  <div className="font-medium">{item.unitsSoldInPeriod}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Ingredients View */}
+      {viewMode === "ingredients" && data && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {data.ingredientPriceChanges.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="text-emerald-500 text-5xl mb-4">✓</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Prices Stable</h3>
+              <p className="text-gray-600">No significant ingredient price changes detected in invoices for this period.</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Ingredient</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Reference</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Invoice Price</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Change</th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Variance</th>
+                  <th className="text-center px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Invoice Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {data.ingredientPriceChanges.map((ing) => (
+                  <tr key={ing.ingredientId} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <span className="font-medium text-gray-900">{ing.ingredientName}</span>
+                      <span className="text-gray-400 text-sm ml-2">/ {ing.perUnit}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right text-gray-600">{formatCurrency(ing.referencePrice)}</td>
+                    <td className="px-6 py-4 text-right font-medium text-gray-900">{formatCurrency(ing.actualPrice)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <span className={`font-medium ${ing.priceVariance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {ing.priceVariance > 0 ? '+' : ''}{formatCurrency(ing.priceVariance)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium ${
+                        ing.variancePct > 10 ? 'bg-red-100 text-red-800' :
+                        ing.variancePct > 0 ? 'bg-orange-100 text-orange-800' :
+                        ing.variancePct < -10 ? 'bg-green-100 text-green-800' :
+                        'bg-green-50 text-green-700'
+                      }`}>
+                        {formatPercent(ing.variancePct)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm text-gray-500">
+                      {ing.invoiceDate || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }
