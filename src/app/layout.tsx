@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Food Cost Sentinel | WwithAI Demo",
+  title: "Food Cost Sentinel | WwithAI",
   description: "AI-powered food cost tracking: capture invoices, import POS sales, and calculate recipe costs. Powered by WwithAI.",
 };
 
