@@ -781,7 +781,30 @@ function POSSales() {
 
 // ============ RECIPE CALCULATOR TAB ============
 
+type ScannedRecipe = {
+  name: string;
+  description: string;
+  type: string;
+  category: string;
+  yieldQty: number;
+  yieldUnit: string;
+  laborHours: number;
+  ingredientCost: number;
+  laborCost: number;
+  grossCost: number;
+  costPerYield: number;
+  costWithMarkup: number;
+  lines: Array<{
+    ingredientId?: string;
+    ingredientName: string;
+    quantity: number;
+    unit: string;
+    lineCost: number;
+  }>;
+};
+
 function RecipeCalculator() {
+  const [subTab, setSubTab] = useState<"build" | "scan">("build");
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -797,6 +820,13 @@ function RecipeCalculator() {
   const [lineQty, setLineQty] = useState(1);
   const [lineUnit, setLineUnit] = useState("g");
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Scan State
+  const [scanFile, setScanFile] = useState<File | null>(null);
+  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scannedRecipe, setScannedRecipe] = useState<ScannedRecipe | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchIngredients();
@@ -817,6 +847,162 @@ function RecipeCalculator() {
   const filteredIngredients = ingredients.filter((ing) =>
     ing.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Scan handlers
+  const handleScanDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile && droppedFile.type.startsWith("image/")) {
+      setScanFile(droppedFile);
+      setScanPreview(URL.createObjectURL(droppedFile));
+      setScanError(null);
+      setScannedRecipe(null);
+    }
+  }, []);
+
+  const handleScanFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setScanFile(selectedFile);
+      setScanPreview(URL.createObjectURL(selectedFile));
+      setScanError(null);
+      setScannedRecipe(null);
+    }
+  };
+
+  async function scanRecipeImage() {
+    if (!scanFile) return;
+
+    setScanning(true);
+    setScanError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", scanFile);
+
+      const response = await fetch("/api/scan-recipe", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setScannedRecipe(data.recipe);
+      } else {
+        setScanError(data.error || "Failed to scan recipe");
+      }
+    } catch (error) {
+      setScanError("Failed to process image");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function updateScannedLine(index: number, field: string, value: any) {
+    if (!scannedRecipe) return;
+
+    const newLines = [...scannedRecipe.lines];
+    newLines[index] = { ...newLines[index], [field]: value };
+
+    // Recalculate line cost if quantity changed
+    if (field === "quantity") {
+      // Simple cost recalculation based on original ratio
+      const originalLine = scannedRecipe.lines[index];
+      if (originalLine.quantity > 0) {
+        newLines[index].lineCost = (value / originalLine.quantity) * originalLine.lineCost;
+      }
+    }
+
+    // Recalculate totals
+    const newIngredientCost = newLines.reduce((sum, line) => sum + line.lineCost, 0);
+
+    setScannedRecipe({
+      ...scannedRecipe,
+      lines: newLines,
+      ingredientCost: newIngredientCost,
+      grossCost: newIngredientCost,
+      costPerYield: newIngredientCost / (scannedRecipe.yieldQty || 1),
+      costWithMarkup: (newIngredientCost / (scannedRecipe.yieldQty || 1)) * (1 + MARKUP_PERCENTAGE),
+    });
+  }
+
+  function removeScannedLine(index: number) {
+    if (!scannedRecipe) return;
+
+    const newLines = scannedRecipe.lines.filter((_, i) => i !== index);
+    const newIngredientCost = newLines.reduce((sum, line) => sum + line.lineCost, 0);
+
+    setScannedRecipe({
+      ...scannedRecipe,
+      lines: newLines,
+      ingredientCost: newIngredientCost,
+      grossCost: newIngredientCost,
+      costPerYield: newIngredientCost / (scannedRecipe.yieldQty || 1),
+      costWithMarkup: (newIngredientCost / (scannedRecipe.yieldQty || 1)) * (1 + MARKUP_PERCENTAGE),
+    });
+  }
+
+  async function saveScannedRecipe() {
+    if (!scannedRecipe || !scannedRecipe.name) {
+      setSaveMessage("Please enter a recipe name");
+      return;
+    }
+
+    setSaving(true);
+    setSaveMessage("");
+
+    try {
+      const res = await fetch("/api/recipes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: scannedRecipe.name,
+          description: scannedRecipe.description || "Scanned from image",
+          type: scannedRecipe.type || "Menu Item",
+          category: scannedRecipe.category || "Scanned",
+          yieldQty: scannedRecipe.yieldQty || 1,
+          yieldUnit: scannedRecipe.yieldUnit || "serving",
+          laborHours: 0,
+          ingredientCost: scannedRecipe.ingredientCost,
+          laborCost: 0,
+          grossCost: scannedRecipe.grossCost,
+          costPerYield: scannedRecipe.costPerYield,
+          costWithMarkup: scannedRecipe.costWithMarkup,
+          lines: scannedRecipe.lines.map(line => ({
+            ingredientId: line.ingredientId || "",
+            ingredientName: line.ingredientName,
+            quantity: line.quantity,
+            unit: line.unit,
+            lineCost: line.lineCost,
+          })),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setSaveMessage("Recipe saved successfully!");
+        setScannedRecipe(null);
+        setScanFile(null);
+        setScanPreview(null);
+      } else {
+        setSaveMessage("Error: " + (data.error || "Failed to save"));
+      }
+    } catch (error) {
+      setSaveMessage("Error saving recipe");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function resetScan() {
+    setScanFile(null);
+    setScanPreview(null);
+    setScannedRecipe(null);
+    setScanError(null);
+    setSaveMessage("");
+  }
 
   function addIngredientLine() {
     const ingredient = ingredients.find((i) => i.id === selectedIngredient);
@@ -906,6 +1092,306 @@ function RecipeCalculator() {
 
   return (
     <div className="space-y-6">
+      {/* Sub-Tab Navigation */}
+      <div className="flex justify-center">
+        <div className="inline-flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">
+          <button
+            onClick={() => setSubTab("build")}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              subTab === "build"
+                ? "bg-orange-500 text-white shadow-sm"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+            }`}
+          >
+            Build Recipe
+          </button>
+          <button
+            onClick={() => setSubTab("scan")}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              subTab === "scan"
+                ? "bg-orange-500 text-white shadow-sm"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+            }`}
+          >
+            Scan Image
+          </button>
+        </div>
+      </div>
+
+      {/* Scan Image Sub-Tab */}
+      {subTab === "scan" && (
+        <>
+          {/* Upload Section */}
+          {!scannedRecipe && !scanning && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+              <div className="text-center mb-6">
+                <h2 className="text-lg font-semibold text-gray-800 mb-2">Scan Recipe Image</h2>
+                <p className="text-sm text-gray-600">Upload a photo of a handwritten or printed recipe</p>
+              </div>
+
+              <div
+                onDrop={handleScanDrop}
+                onDragOver={(e) => e.preventDefault()}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  scanFile ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-orange-400"
+                }`}
+              >
+                {scanPreview ? (
+                  <div>
+                    <img
+                      src={scanPreview}
+                      alt="Recipe preview"
+                      className="max-h-64 mx-auto mb-4 rounded-lg shadow"
+                    />
+                    <p className="text-sm text-gray-600 mb-4">{scanFile?.name}</p>
+                    <button
+                      onClick={resetScan}
+                      className="text-sm text-red-600 hover:text-red-700"
+                    >
+                      Remove and select another
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <svg
+                      className="mx-auto h-16 w-16 text-gray-400 mb-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
+                    <p className="text-lg font-medium text-gray-700 mb-2">
+                      Drop your recipe image here
+                    </p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Handwritten notes, printed recipes, ingredient lists
+                    </p>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleScanFileSelect}
+                      className="hidden"
+                      id="scan-file-input"
+                    />
+                    <label
+                      htmlFor="scan-file-input"
+                      className="inline-block px-6 py-2 bg-orange-500 text-white rounded-lg cursor-pointer hover:bg-orange-600 transition-colors"
+                    >
+                      Select Image
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {scanError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {scanError}
+                </div>
+              )}
+
+              {scanFile && (
+                <button
+                  onClick={scanRecipeImage}
+                  className="w-full mt-6 px-6 py-3 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition-colors"
+                >
+                  Scan with AI
+                </button>
+              )}
+
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Tips for best results:</h3>
+                <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
+                  <li>Ensure text is clearly visible and readable</li>
+                  <li>Include quantities and units (e.g., "200g chicken")</li>
+                  <li>Works with handwritten notes or printed recipes</li>
+                  <li>Supported formats: JPG, PNG, HEIC</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Scanning Spinner */}
+          {scanning && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-500 border-t-transparent mx-auto mb-6" />
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Scanning Recipe...
+              </h2>
+              <p className="text-gray-600">
+                AI is extracting ingredients and calculating costs
+              </p>
+            </div>
+          )}
+
+          {/* Scanned Recipe Preview */}
+          {scannedRecipe && !scanning && (
+            <>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <h2 className="text-lg font-semibold text-gray-800">Extracted Recipe</h2>
+                  <button
+                    onClick={resetScan}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Scan New Image
+                  </button>
+                </div>
+
+                {scannedRecipe.description?.includes("Demo") && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+                    Demo mode - Add ANTHROPIC_API_KEY in Vercel for real AI scanning
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Recipe Name</label>
+                    <input
+                      type="text"
+                      value={scannedRecipe.name}
+                      onChange={(e) => setScannedRecipe({ ...scannedRecipe, name: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select
+                      value={scannedRecipe.category}
+                      onChange={(e) => setScannedRecipe({ ...scannedRecipe, category: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="Scanned">Scanned</option>
+                      <option value="Appetizers">Appetizers</option>
+                      <option value="Noodles">Noodles</option>
+                      <option value="Soups">Soups</option>
+                      <option value="Rice Dishes">Rice Dishes</option>
+                      <option value="Salads">Salads</option>
+                      <option value="Beverages">Beverages</option>
+                      <option value="Desserts">Desserts</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Extracted Ingredients */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4">Extracted Ingredients</h2>
+                <p className="text-sm text-gray-600 mb-4">Edit quantities or remove ingredients as needed</p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-left text-sm text-gray-600">
+                        <th className="py-2">Ingredient</th>
+                        <th className="py-2 text-right w-24">Qty</th>
+                        <th className="py-2 w-24">Unit</th>
+                        <th className="py-2 text-right">Cost</th>
+                        <th className="py-2 w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scannedRecipe.lines.map((line, idx) => (
+                        <tr key={idx} className="border-b">
+                          <td className="py-3">
+                            <input
+                              type="text"
+                              value={line.ingredientName}
+                              onChange={(e) => updateScannedLine(idx, "ingredientName", e.target.value)}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
+                            />
+                          </td>
+                          <td className="py-3">
+                            <input
+                              type="number"
+                              value={line.quantity}
+                              onChange={(e) => updateScannedLine(idx, "quantity", parseFloat(e.target.value) || 0)}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-right"
+                              min="0"
+                              step="0.1"
+                            />
+                          </td>
+                          <td className="py-3">
+                            <select
+                              value={line.unit}
+                              onChange={(e) => updateScannedLine(idx, "unit", e.target.value)}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
+                            >
+                              <option value="g">g</option>
+                              <option value="kg">kg</option>
+                              <option value="mL">mL</option>
+                              <option value="L">L</option>
+                              <option value="fl. oz">fl. oz</option>
+                              <option value="whole unit">whole unit</option>
+                            </select>
+                          </td>
+                          <td className="py-3 text-right font-medium">
+                            ${line.lineCost.toFixed(2)}
+                          </td>
+                          <td className="py-3 text-right">
+                            <button
+                              onClick={() => removeScannedLine(idx)}
+                              className="text-red-500 hover:text-red-700 text-sm"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Cost Summary for Scanned Recipe */}
+              <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl shadow-lg p-6 text-white">
+                <h2 className="text-lg font-semibold mb-4">Cost Summary</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white/20 rounded-lg p-4 text-center">
+                    <p className="text-sm opacity-80">Ingredient Cost</p>
+                    <p className="text-2xl font-bold">${scannedRecipe.ingredientCost.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white/20 rounded-lg p-4 text-center">
+                    <p className="text-sm opacity-80">Cost Per Serving</p>
+                    <p className="text-2xl font-bold">${scannedRecipe.costPerYield.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white/20 rounded-lg p-4 text-center">
+                    <p className="text-sm opacity-80">With 50% Markup</p>
+                    <p className="text-2xl font-bold">${scannedRecipe.costWithMarkup.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white/30 rounded-lg p-4 text-center">
+                    <p className="text-sm opacity-80">Suggested Price</p>
+                    <p className="text-3xl font-bold">${(Math.ceil(scannedRecipe.costWithMarkup) - 0.01).toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Scanned Recipe */}
+              <div className="flex justify-between items-center">
+                <p className={saveMessage.includes("Error") ? "text-red-600" : "text-green-600"}>
+                  {saveMessage}
+                </p>
+                <button
+                  onClick={saveScannedRecipe}
+                  disabled={saving || !scannedRecipe.name || scannedRecipe.lines.length === 0}
+                  className="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition font-medium text-lg"
+                >
+                  {saving ? "Saving..." : "Save Recipe"}
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Build Recipe Sub-Tab */}
+      {subTab === "build" && (
+        <>
       {/* Recipe Info */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Recipe Details</h2>
@@ -1113,6 +1599,8 @@ function RecipeCalculator() {
       <div className="text-center text-sm text-gray-500">
         {ingredients.length} ingredients loaded from database
       </div>
+        </>
+      )}
     </div>
   );
 }
