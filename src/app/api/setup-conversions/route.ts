@@ -140,14 +140,25 @@ function normalizeProductName(name: string): string {
     .trim()
 }
 
+interface IngredientRecord {
+  id: string
+  name: string
+  perUnit: string
+  unitCost?: number
+  category?: string | null
+  invoiceUnit?: string | null
+  conversionFactor?: number | null
+  conversionNotes?: string | null
+}
+
 function findBestIngredientMatch(
   productName: string,
-  ingredients: { id: string; name: string; perUnit: string }[]
-): { ingredient: { id: string; name: string; perUnit: string } | null; confidence: number } {
+  ingredients: IngredientRecord[]
+): { ingredient: IngredientRecord | null; confidence: number } {
   const normalizedProduct = normalizeProductName(productName)
   const productWords = normalizedProduct.split(' ').filter(w => w.length > 2)
 
-  let bestMatch: { id: string; name: string; perUnit: string } | null = null
+  let bestMatch: IngredientRecord | null = null
   let bestScore = 0
 
   for (const ing of ingredients) {
@@ -337,7 +348,7 @@ export async function GET() {
     }
 
     // For each invoice item, find matching ingredient and suggest conversion
-    for (const [, item] of latestPrices) {
+    for (const item of Array.from(latestPrices.values())) {
       const { ingredient, confidence } = findBestIngredientMatch(item.productName, ingredients)
 
       if (!ingredient || confidence < 0.4) {
@@ -451,7 +462,7 @@ export async function POST(request: NextRequest) {
     const results: any[] = []
     const errors: any[] = []
 
-    for (const [, item] of latestPrices) {
+    for (const item of Array.from(latestPrices.values())) {
       const { ingredient, confidence } = findBestIngredientMatch(item.productName, ingredients)
 
       if (!ingredient || confidence < 0.4) continue
@@ -496,7 +507,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: errors.length === 0,
       applied: results.length,
-      errors: errors.length,
+      errorCount: errors.length,
       results,
       errors: errors.length > 0 ? errors : undefined,
     })

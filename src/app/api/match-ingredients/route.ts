@@ -245,7 +245,7 @@ function expandWithSynonyms(term: string): string[] {
     }
   }
 
-  return [...new Set(results)]
+  return Array.from(new Set(results))
 }
 
 // Calculate similarity score between two strings (improved algorithm)
