@@ -105,7 +105,7 @@ function convertUnits(quantity: number, fromUnit: string, toUnit: string): numbe
 // ============ MAIN COMPONENT ============
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"invoices" | "pos" | "recipe" | "costs" | "matching" | "alerts">("invoices");
+  const [activeTab, setActiveTab] = useState<"invoices" | "pos" | "recipe" | "costs" | "matching" | "alerts" | "audit">("invoices");
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50 py-8 px-4">
@@ -184,6 +184,16 @@ export default function Home() {
               >
                 Alerts
               </button>
+              <button
+                onClick={() => setActiveTab("audit")}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  activeTab === "audit"
+                    ? "bg-slate-700 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                Data Audit
+              </button>
             </div>
           </div>
         </div>
@@ -195,6 +205,7 @@ export default function Home() {
         {activeTab === "costs" && <CostCalculator />}
         {activeTab === "matching" && <IngredientMatching />}
         {activeTab === "alerts" && <AlertsAnalysis />}
+        {activeTab === "audit" && <DataAudit />}
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-gray-500">
@@ -3115,6 +3126,275 @@ function CostCalculator() {
             </table>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============ DATA AUDIT COMPONENT ============
+
+type AuditIssue = {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  type: 'price_anomaly' | 'unit_mismatch' | 'missing_price' | 'duplicate' | 'variance_too_high' | 'suspicious_unit_cost';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description: string;
+  currentValue: string;
+  suggestedFix: string;
+  referencePrice?: number;
+  actualPrice?: number;
+  variance?: number;
+};
+
+type AuditSummary = {
+  totalIngredients: number;
+  ingredientsWithPrice: number;
+  ingredientsWithoutPrice: number;
+  invoiceItemsAnalyzed: number;
+  totalIssues: number;
+  criticalIssues: number;
+  highIssues: number;
+  mediumIssues: number;
+  lowIssues: number;
+  issuesByType: Record<string, number>;
+};
+
+type AuditResponse = {
+  success: boolean;
+  summary: AuditSummary;
+  issues: AuditIssue[];
+  topPriority: AuditIssue[];
+};
+
+function DataAudit() {
+  const [loading, setLoading] = useState(false);
+  const [auditData, setAuditData] = useState<AuditResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fixing, setFixing] = useState<string | null>(null);
+  const [fixedIds, setFixedIds] = useState<Set<string>>(new Set());
+
+  const runAudit = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/data-audit');
+      const data = await res.json();
+      if (data.success) {
+        setAuditData(data);
+      } else {
+        setError(data.error || 'Audit failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to run audit');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyFix = async (issue: AuditIssue) => {
+    if (issue.type !== 'variance_too_high' || !issue.actualPrice) return;
+
+    setFixing(issue.id);
+    try {
+      const res = await fetch('/api/fix-ingredient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ingredientId: issue.ingredientId,
+          field: 'unitCost',
+          newValue: issue.actualPrice,
+          reason: `Auto-fix from audit: ${issue.description}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFixedIds(prev => new Set(prev).add(issue.id));
+      } else {
+        alert(`Fix failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Fix failed: ${err.message}`);
+    } finally {
+      setFixing(null);
+    }
+  };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'variance_too_high': return '📊';
+      case 'suspicious_unit_cost': return '⚠️';
+      case 'missing_price': return '❌';
+      case 'duplicate': return '👯';
+      case 'price_anomaly': return '📈';
+      default: return '🔍';
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Data Quality Audit</h2>
+          <p className="text-gray-500 text-sm mt-1">Detect and fix pricing anomalies in your ingredient database</p>
+        </div>
+        <button
+          onClick={runAudit}
+          disabled={loading}
+          className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 flex items-center gap-2"
+        >
+          {loading ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Scanning...
+            </>
+          ) : (
+            <>
+              Run Audit
+            </>
+          )}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          {error}
+        </div>
+      )}
+
+      {!auditData && !loading && (
+        <div className="text-center py-12 text-gray-500">
+          <div className="text-4xl mb-4">🔬</div>
+          <p>Click "Run Audit" to scan your ingredient database for data quality issues</p>
+        </div>
+      )}
+
+      {auditData && (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-slate-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-slate-700">{auditData.summary.totalIngredients}</div>
+              <div className="text-sm text-gray-500">Total Ingredients</div>
+            </div>
+            <div className="bg-red-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-red-600">{auditData.summary.criticalIssues}</div>
+              <div className="text-sm text-gray-500">Critical Issues</div>
+            </div>
+            <div className="bg-orange-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-orange-600">{auditData.summary.highIssues}</div>
+              <div className="text-sm text-gray-500">High Priority</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{auditData.summary.ingredientsWithPrice}</div>
+              <div className="text-sm text-gray-500">With Prices</div>
+            </div>
+          </div>
+
+          {/* Issue Type Breakdown */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+            <h3 className="font-medium text-gray-700 mb-2">Issues by Type</h3>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(auditData.summary.issuesByType).map(([type, count]) => (
+                count > 0 && (
+                  <span key={type} className="px-3 py-1 bg-white rounded-full text-sm border">
+                    {getTypeIcon(type)} {type.replace(/_/g, ' ')}: {count}
+                  </span>
+                )
+              ))}
+            </div>
+          </div>
+
+          {/* Issues List */}
+          {auditData.issues.length === 0 ? (
+            <div className="text-center py-8 text-green-600">
+              <div className="text-4xl mb-2">✅</div>
+              <p className="font-medium">No issues found! Your data looks clean.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <h3 className="font-medium text-gray-700">
+                Top Issues ({Math.min(auditData.issues.length, 20)} of {auditData.summary.totalIssues})
+              </h3>
+              {auditData.issues.slice(0, 20).map((issue) => (
+                <div
+                  key={issue.id}
+                  className={`p-4 rounded-lg border ${getSeverityColor(issue.severity)} ${fixedIds.has(issue.id) ? 'opacity-50' : ''}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span>{getTypeIcon(issue.type)}</span>
+                        <span className="font-medium">{issue.ingredientName}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs uppercase font-medium ${
+                          issue.severity === 'critical' ? 'bg-red-200 text-red-800' :
+                          issue.severity === 'high' ? 'bg-orange-200 text-orange-800' :
+                          'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {issue.severity}
+                        </span>
+                      </div>
+                      <p className="text-sm mb-1">{issue.description}</p>
+                      <div className="text-xs text-gray-600">
+                        <span className="font-medium">Current:</span> {issue.currentValue}
+                        {issue.suggestedFix && (
+                          <span className="ml-3">
+                            <span className="font-medium">Fix:</span> {issue.suggestedFix}
+                          </span>
+                        )}
+                      </div>
+                      {issue.variance && (
+                        <div className="mt-1 text-xs">
+                          <span className={issue.variance > 0 ? 'text-red-600' : 'text-green-600'}>
+                            {issue.variance > 0 ? '+' : ''}{issue.variance.toFixed(0)}% variance
+                          </span>
+                          {issue.referencePrice && issue.actualPrice && (
+                            <span className="text-gray-500 ml-2">
+                              (${issue.referencePrice.toFixed(4)} → ${issue.actualPrice.toFixed(4)})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {issue.type === 'variance_too_high' && issue.actualPrice && !fixedIds.has(issue.id) && (
+                      <button
+                        onClick={() => applyFix(issue)}
+                        disabled={fixing === issue.id}
+                        className="ml-4 px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {fixing === issue.id ? (
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          '✓'
+                        )}
+                        Apply Fix
+                      </button>
+                    )}
+                    {fixedIds.has(issue.id) && (
+                      <span className="ml-4 px-3 py-1.5 bg-green-100 text-green-700 text-sm rounded">
+                        ✓ Fixed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Refresh Note */}
+          <div className="mt-6 text-center text-sm text-gray-500">
+            Run audit again after applying fixes to verify corrections
+          </div>
+        </>
       )}
     </div>
   );
