@@ -40,6 +40,9 @@ interface IngredientData {
   perUnit: string
   category: string | null
   priceUpdated: string | null
+  invoiceUnit: string | null       // Unit on invoice (box, case, bunch)
+  conversionFactor: number | null  // How many base units per invoice unit
+  conversionNotes: string | null   // e.g., "12x454g packs"
 }
 
 interface InvoiceItemData {
@@ -54,14 +57,85 @@ interface AuditIssue {
   id: string
   ingredientId: string
   ingredientName: string
-  type: 'price_anomaly' | 'unit_mismatch' | 'missing_price' | 'duplicate' | 'variance_too_high' | 'suspicious_unit_cost'
-  severity: 'critical' | 'high' | 'medium' | 'low'
+  type: 'price_anomaly' | 'unit_mismatch' | 'missing_price' | 'duplicate' | 'variance_too_high' | 'suspicious_unit_cost' | 'needs_conversion' | 'conversion_mismatch'
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   description: string
   currentValue: string
   suggestedFix: string
   referencePrice?: number
   actualPrice?: number
   variance?: number
+  suggestedConversion?: {
+    invoiceUnit: string
+    factor: number
+    calculatedUnitCost: number
+    notes: string
+  }
+}
+
+// Parse product descriptions to extract conversion info (e.g., "12X454G" → 5448g)
+function parseConversionFromDescription(description: string): { factor: number; unit: string; notes: string } | null {
+  const desc = description.toUpperCase()
+
+  // Pattern: NxWEIGHT (e.g., "12X454G", "6X1KG", "24X500ML")
+  const multiPackMatch = desc.match(/(\d+)\s*[Xx]\s*(\d+(?:\.\d+)?)\s*(G|KG|ML|L|OZ|LB)/i)
+  if (multiPackMatch) {
+    const count = parseInt(multiPackMatch[1])
+    const size = parseFloat(multiPackMatch[2])
+    const unit = multiPackMatch[3].toUpperCase()
+
+    let totalGrams = 0
+    let baseUnit = 'g'
+
+    if (unit === 'G') {
+      totalGrams = count * size
+      baseUnit = 'g'
+    } else if (unit === 'KG') {
+      totalGrams = count * size * 1000
+      baseUnit = 'g'
+    } else if (unit === 'LB' || unit === 'LBS') {
+      totalGrams = count * size * 453.592
+      baseUnit = 'g'
+    } else if (unit === 'OZ') {
+      totalGrams = count * size * 28.3495
+      baseUnit = 'g'
+    } else if (unit === 'ML') {
+      return { factor: count * size, unit: 'mL', notes: `${count}x${size}mL` }
+    } else if (unit === 'L') {
+      return { factor: count * size * 1000, unit: 'mL', notes: `${count}x${size}L` }
+    }
+
+    return { factor: totalGrams, unit: baseUnit, notes: `${count}x${size}${unit}` }
+  }
+
+  // Pattern: WEIGHT per unit (e.g., "5LBS", "2KG", "500G")
+  const singleWeightMatch = desc.match(/(\d+(?:\.\d+)?)\s*(G|KG|ML|L|OZ|LB|LBS)/i)
+  if (singleWeightMatch) {
+    const size = parseFloat(singleWeightMatch[1])
+    const unit = singleWeightMatch[2].toUpperCase()
+
+    if (unit === 'G') return { factor: size, unit: 'g', notes: `${size}g` }
+    if (unit === 'KG') return { factor: size * 1000, unit: 'g', notes: `${size}kg` }
+    if (unit === 'LB' || unit === 'LBS') return { factor: size * 453.592, unit: 'g', notes: `${size}lbs` }
+    if (unit === 'OZ') return { factor: size * 28.3495, unit: 'g', notes: `${size}oz` }
+    if (unit === 'ML') return { factor: size, unit: 'mL', notes: `${size}mL` }
+    if (unit === 'L') return { factor: size * 1000, unit: 'mL', notes: `${size}L` }
+  }
+
+  // Pattern: SIZE N (e.g., "SIZE 200" for limes = ~200 count)
+  const sizeCountMatch = desc.match(/SIZE\s*(\d+)/i)
+  if (sizeCountMatch) {
+    return { factor: parseInt(sizeCountMatch[1]), unit: 'whole unit', notes: `~${sizeCountMatch[1]} count` }
+  }
+
+  // Pattern: NxNUN (e.g., "15X12UN" = 180 units)
+  const unitCountMatch = desc.match(/(\d+)\s*[Xx]\s*(\d+)\s*UN/i)
+  if (unitCountMatch) {
+    const total = parseInt(unitCountMatch[1]) * parseInt(unitCountMatch[2])
+    return { factor: total, unit: 'whole unit', notes: `${unitCountMatch[1]}x${unitCountMatch[2]} units = ${total}` }
+  }
+
+  return null
 }
 
 async function fetchAllIngredients(): Promise<IngredientData[]> {
@@ -87,6 +161,11 @@ async function fetchAllIngredients(): Promise<IngredientData[]> {
       const category = props['Category']?.select?.name || null
       const priceUpdated = props['Price Updated']?.date?.start || null
 
+      // New conversion fields
+      const invoiceUnit = props['Invoice Unit']?.select?.name || null
+      const conversionFactor = props['Conversion Factor']?.number ?? null
+      const conversionNotes = props['Conversion Notes']?.rich_text?.[0]?.plain_text || null
+
       if (name) {
         ingredients.push({
           id: page.id,
@@ -96,6 +175,9 @@ async function fetchAllIngredients(): Promise<IngredientData[]> {
           perUnit,
           category,
           priceUpdated,
+          invoiceUnit,
+          conversionFactor,
+          conversionNotes,
         })
       }
     }
@@ -234,26 +316,103 @@ function detectAnomalies(
       })
     }
 
-    // Check variance against invoice prices
+    // Check variance against invoice prices WITH conversion factor support
     const invoiceItem = invoicePrices.get(nameLower)
     if (invoiceItem && ing.unitCost > 0) {
-      const variance = ((invoiceItem.unitPrice - ing.unitCost) / ing.unitCost) * 100
+      // Check if we have a conversion factor defined
+      if (ing.conversionFactor && ing.conversionFactor > 0) {
+        // Apply conversion: invoice price / conversion factor = price per base unit
+        const convertedUnitPrice = invoiceItem.unitPrice / ing.conversionFactor
+        const variance = ((convertedUnitPrice - ing.unitCost) / ing.unitCost) * 100
 
-      if (Math.abs(variance) > ANOMALY_THRESHOLDS.maxVariancePct) {
-        const severity = Math.abs(variance) > 1000 ? 'critical' : 'high'
-        issues.push({
-          id: `variance-${ing.id}`,
-          ingredientId: ing.id,
-          ingredientName: ing.name,
-          type: 'variance_too_high',
-          severity,
-          description: `${variance > 0 ? '+' : ''}${variance.toFixed(0)}% variance between reference and invoice price`,
-          currentValue: `Reference: $${ing.unitCost.toFixed(4)}/${ing.perUnit}`,
-          suggestedFix: `Update to invoice price: $${invoiceItem.unitPrice.toFixed(4)}/${invoiceItem.unit}`,
-          referencePrice: ing.unitCost,
-          actualPrice: invoiceItem.unitPrice,
-          variance: variance,
-        })
+        if (Math.abs(variance) > 20) { // 20% tolerance after conversion
+          issues.push({
+            id: `conversion-variance-${ing.id}`,
+            ingredientId: ing.id,
+            ingredientName: ing.name,
+            type: 'conversion_mismatch',
+            severity: Math.abs(variance) > 50 ? 'high' : 'medium',
+            description: `${variance > 0 ? '+' : ''}${variance.toFixed(1)}% variance after applying conversion (${ing.conversionFactor} ${ing.perUnit}/${ing.invoiceUnit})`,
+            currentValue: `Reference: $${ing.unitCost.toFixed(4)}/${ing.perUnit}, Converted: $${convertedUnitPrice.toFixed(4)}/${ing.perUnit}`,
+            suggestedFix: `Verify conversion factor or update unit cost to $${convertedUnitPrice.toFixed(4)}/${ing.perUnit}`,
+            referencePrice: ing.unitCost,
+            actualPrice: convertedUnitPrice,
+            variance: variance,
+          })
+        }
+      } else {
+        // No conversion factor - check if units differ and suggest one
+        const invoiceUnitLower = invoiceItem.unit?.toLowerCase() || ''
+        const refUnitLower = ing.perUnit?.toLowerCase() || ''
+        const isUnitMismatch = invoiceUnitLower !== refUnitLower &&
+                              ['box', 'case', 'bunch', 'bag', 'each', 'pack'].includes(invoiceUnitLower)
+
+        if (isUnitMismatch) {
+          // Try to parse conversion from product name
+          const parsedConversion = parseConversionFromDescription(invoiceItem.productName)
+
+          if (parsedConversion) {
+            // Calculate what the unit cost would be with this conversion
+            const calculatedUnitCost = invoiceItem.unitPrice / parsedConversion.factor
+            const variance = ((calculatedUnitCost - ing.unitCost) / ing.unitCost) * 100
+
+            issues.push({
+              id: `needs-conversion-${ing.id}`,
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'needs_conversion',
+              severity: 'info',
+              description: `Unit mismatch detected: invoice is per ${invoiceItem.unit}, reference is per ${ing.perUnit}. Auto-detected conversion available.`,
+              currentValue: `Invoice: $${invoiceItem.unitPrice.toFixed(2)}/${invoiceItem.unit} | Reference: $${ing.unitCost.toFixed(4)}/${ing.perUnit}`,
+              suggestedFix: `Set Conversion Factor = ${parsedConversion.factor.toFixed(0)} (${parsedConversion.notes}) → $${calculatedUnitCost.toFixed(4)}/${parsedConversion.unit}`,
+              referencePrice: ing.unitCost,
+              actualPrice: invoiceItem.unitPrice,
+              variance: variance,
+              suggestedConversion: {
+                invoiceUnit: invoiceItem.unit,
+                factor: parsedConversion.factor,
+                calculatedUnitCost: calculatedUnitCost,
+                notes: parsedConversion.notes,
+              }
+            })
+          } else {
+            // Can't auto-detect, flag for manual review
+            const rawVariance = ((invoiceItem.unitPrice - ing.unitCost) / ing.unitCost) * 100
+            issues.push({
+              id: `variance-${ing.id}`,
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'unit_mismatch',
+              severity: 'high',
+              description: `Unit mismatch: invoice is per ${invoiceItem.unit}, reference is per ${ing.perUnit}. Manual conversion needed.`,
+              currentValue: `Invoice: $${invoiceItem.unitPrice.toFixed(2)}/${invoiceItem.unit} | Reference: $${ing.unitCost.toFixed(4)}/${ing.perUnit}`,
+              suggestedFix: `Add Invoice Unit = "${invoiceItem.unit}" and Conversion Factor (${ing.perUnit} per ${invoiceItem.unit})`,
+              referencePrice: ing.unitCost,
+              actualPrice: invoiceItem.unitPrice,
+              variance: rawVariance,
+            })
+          }
+        } else {
+          // Same units or simple comparison
+          const variance = ((invoiceItem.unitPrice - ing.unitCost) / ing.unitCost) * 100
+
+          if (Math.abs(variance) > ANOMALY_THRESHOLDS.maxVariancePct) {
+            const severity = Math.abs(variance) > 1000 ? 'critical' : 'high'
+            issues.push({
+              id: `variance-${ing.id}`,
+              ingredientId: ing.id,
+              ingredientName: ing.name,
+              type: 'variance_too_high',
+              severity,
+              description: `${variance > 0 ? '+' : ''}${variance.toFixed(0)}% variance between reference and invoice price`,
+              currentValue: `Reference: $${ing.unitCost.toFixed(4)}/${ing.perUnit}`,
+              suggestedFix: `Update to invoice price: $${invoiceItem.unitPrice.toFixed(4)}/${invoiceItem.unit}`,
+              referencePrice: ing.unitCost,
+              actualPrice: invoiceItem.unitPrice,
+              variance: variance,
+            })
+          }
+        }
       }
     }
 
@@ -280,8 +439,8 @@ function detectAnomalies(
   }
 
   // Sort by severity
-  const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 }
-  issues.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
+  issues.sort((a, b) => (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5))
 
   return issues
 }
@@ -315,7 +474,10 @@ export async function GET() {
         suspicious_unit_cost: issues.filter(i => i.type === 'suspicious_unit_cost').length,
         duplicate: issues.filter(i => i.type === 'duplicate').length,
         unit_mismatch: issues.filter(i => i.type === 'unit_mismatch').length,
-      }
+        needs_conversion: issues.filter(i => i.type === 'needs_conversion').length,
+        conversion_mismatch: issues.filter(i => i.type === 'conversion_mismatch').length,
+      },
+      ingredientsWithConversion: ingredients.filter(i => i.conversionFactor && i.conversionFactor > 0).length,
     }
 
     return NextResponse.json({

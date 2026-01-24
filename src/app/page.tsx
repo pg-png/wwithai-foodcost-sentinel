@@ -3137,14 +3137,20 @@ type AuditIssue = {
   id: string;
   ingredientId: string;
   ingredientName: string;
-  type: 'price_anomaly' | 'unit_mismatch' | 'missing_price' | 'duplicate' | 'variance_too_high' | 'suspicious_unit_cost';
-  severity: 'critical' | 'high' | 'medium' | 'low';
+  type: 'price_anomaly' | 'unit_mismatch' | 'missing_price' | 'duplicate' | 'variance_too_high' | 'suspicious_unit_cost' | 'needs_conversion' | 'conversion_mismatch';
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
   description: string;
   currentValue: string;
   suggestedFix: string;
   referencePrice?: number;
   actualPrice?: number;
   variance?: number;
+  suggestedConversion?: {
+    invoiceUnit: string;
+    factor: number;
+    calculatedUnitCost: number;
+    notes: string;
+  };
 };
 
 type AuditSummary = {
@@ -3158,6 +3164,7 @@ type AuditSummary = {
   mediumIssues: number;
   lowIssues: number;
   issuesByType: Record<string, number>;
+  ingredientsWithConversion?: number;
 };
 
 type AuditResponse = {
@@ -3220,11 +3227,42 @@ function DataAudit() {
     }
   };
 
+  const applyConversion = async (issue: AuditIssue) => {
+    if (!issue.suggestedConversion) return;
+
+    setFixing(issue.id);
+    try {
+      const res = await fetch('/api/fix-ingredient', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ingredientId: issue.ingredientId,
+          invoiceUnit: issue.suggestedConversion.invoiceUnit,
+          conversionFactor: issue.suggestedConversion.factor,
+          conversionNotes: issue.suggestedConversion.notes,
+          recalculateUnitCost: true,
+          invoicePrice: issue.actualPrice,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFixedIds(prev => new Set(prev).add(issue.id));
+      } else {
+        alert(`Conversion setup failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Conversion setup failed: ${err.message}`);
+    } finally {
+      setFixing(null);
+    }
+  };
+
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical': return 'bg-red-100 text-red-800 border-red-200';
       case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'info': return 'bg-blue-100 text-blue-800 border-blue-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
@@ -3236,6 +3274,9 @@ function DataAudit() {
       case 'missing_price': return '❌';
       case 'duplicate': return '👯';
       case 'price_anomaly': return '📈';
+      case 'needs_conversion': return '🔄';
+      case 'conversion_mismatch': return '⚖️';
+      case 'unit_mismatch': return '📐';
       default: return '🔍';
     }
   };
@@ -3338,6 +3379,7 @@ function DataAudit() {
                         <span className={`px-2 py-0.5 rounded text-xs uppercase font-medium ${
                           issue.severity === 'critical' ? 'bg-red-200 text-red-800' :
                           issue.severity === 'high' ? 'bg-orange-200 text-orange-800' :
+                          issue.severity === 'info' ? 'bg-blue-200 text-blue-800' :
                           'bg-yellow-200 text-yellow-800'
                         }`}>
                           {issue.severity}
@@ -3364,6 +3406,17 @@ function DataAudit() {
                           )}
                         </div>
                       )}
+                      {issue.suggestedConversion && (
+                        <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+                          <div className="font-medium text-blue-800 mb-1">Auto-detected Conversion:</div>
+                          <div className="text-blue-700">
+                            1 {issue.suggestedConversion.invoiceUnit} = {issue.suggestedConversion.factor.toFixed(0)} {issue.suggestedConversion.notes}
+                          </div>
+                          <div className="text-blue-600 mt-1">
+                            Calculated unit cost: ${issue.suggestedConversion.calculatedUnitCost.toFixed(4)}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {issue.type === 'variance_too_high' && issue.actualPrice && !fixedIds.has(issue.id) && (
                       <button
@@ -3377,6 +3430,20 @@ function DataAudit() {
                           '✓'
                         )}
                         Apply Fix
+                      </button>
+                    )}
+                    {issue.type === 'needs_conversion' && issue.suggestedConversion && !fixedIds.has(issue.id) && (
+                      <button
+                        onClick={() => applyConversion(issue)}
+                        disabled={fixing === issue.id}
+                        className="ml-4 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {fixing === issue.id ? (
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          '🔄'
+                        )}
+                        Set Conversion
                       </button>
                     )}
                     {fixedIds.has(issue.id) && (
